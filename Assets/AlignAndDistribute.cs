@@ -220,29 +220,52 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         if (gameObjects.Length <= 0) { return; }
 
-
+        //Grab all the min max values per axis.
         Tuple<Vector3, Vector3> MinMax = FindMinMax(gameObjects, settings.CalculationMethod);
-        Vector3 ActiveMinMax = (Vector3.Dot(settings.Direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
+
+        //Check the direction - it will determine min or max
+        Vector3 ActiveMinMax;// = Vector3.zero;// = (Vector3.Dot(settings.Direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
+
+        if (Vector3.Dot(settings.Direction, Vector3.one) > 0)
+        {
+            Debug.Log("we're out maxin");
+            ActiveMinMax = MinMax.Item2;
+        }
+        else
+        {
+            ActiveMinMax = MinMax.Item1;
+            Debug.Log("MIN");
+        }
+        Debug.Log("active plane origin: " + Vector3.Scale(ActiveMinMax, VectAbs(settings.Direction)).ToString("F5"));
+
+        //Generate the plane to project against
         Vector3 PlaneOrigin = Vector3.Scale(ActiveMinMax, VectAbs(settings.Direction));
-        Plane AlignmentPlane = new Plane(settings.Direction, PlaneOrigin);
+        Plane AlignmentPlane = new Plane(VectAbs(settings.Direction), PlaneOrigin);
 
         foreach (var gameObj in gameObjects)
         {
-            switch (settings.CalculationMethod)
+            //use AABB if Collider or Renderer
+            Bounds bounds = new Bounds();
+            Vector3 additionalOffset = Vector3.zero;
+
+            if (settings.CalculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
             {
-                case ConfigurationSettings.CalculationMethodType.Origin:
-                    gameObj.transform.position = AlignmentPlane.ClosestPointOnPlane(gameObj.transform.position);
-
-                    break;
-                case ConfigurationSettings.CalculationMethodType.Collider:
-
-
-                    break;
-                case ConfigurationSettings.CalculationMethodType.Renderer:
-                    break;
-                default:
-                    break;
+                bounds = gameObj.GetComponent<Collider>().bounds;
             }
+            else if (settings.CalculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
+            {
+                bounds = gameObj.GetComponent<Renderer>().bounds;
+            }
+
+            if (bounds.size != Vector3.zero)
+            {
+                //get the offset from the origin and AABB
+                Vector3 offset = Vector3.Scale(bounds.center - gameObj.transform.position, VectAbs(settings.Direction));
+                additionalOffset = offset - Vector3.Scale(bounds.extents, -settings.Direction);
+            }
+
+            //project the position on the plane and apply any additional offset
+            gameObj.transform.position = AlignmentPlane.ClosestPointOnPlane(gameObj.transform.position) - additionalOffset;
         }
 
     }
@@ -310,11 +333,17 @@ public class AlignAndDistributeWindow : EditorWindow
                     initialPositionValid = true;
                 }
 
-                for (int i = 0; i < 2; i++)
+                Debug.Log("------");
+                Debug.Log("Name: " + gameObj.name);
+                Debug.Log("Object center: " + bounds.center);
+                Debug.Log("Object min: " + bounds.min);
+                Debug.Log("Object max: " + bounds.max);
+
+                for (int i = 0; i < 3; i++)
                 {
                     //find the min-most or max-most value
-                    min[i] = (bounds.center[i] + bounds.min[i] < min[i]) ? bounds.center[i] + bounds.min[i] : min[i];
-                    max[i] = (bounds.center[i] + bounds.max[i] > max[i]) ? bounds.center[i] + bounds.max[i] : max[i];
+                    min[i] = (bounds.min[i] < min[i]) ? bounds.min[i] : min[i];
+                    max[i] = (bounds.max[i] > max[i]) ? bounds.max[i] : max[i];
                 }
             }
         }
@@ -331,11 +360,12 @@ public class AlignAndDistributeWindow : EditorWindow
             GameObject[] GameObjectQueue = (fallbackToOrigin == true) ? fallbackObjects.ToArray() : gameObjects;
             foreach (GameObject gameObj in GameObjectQueue)
             {
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < 3; i++)
                 {
                     //find the min-most or max-most value
                     min[i] = (gameObj.transform.position[i] < min[i]) ? gameObj.transform.position[i] : min[i];
                     max[i] = (gameObj.transform.position[i] > max[i]) ? gameObj.transform.position[i] : max[i];
+
                 }
             }
         }
