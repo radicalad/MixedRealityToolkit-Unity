@@ -1,14 +1,14 @@
-﻿using System;
-using System.Collections;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
+using Microsoft.MixedReality.Toolkit;
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 public class AlignAndDistributeWindow : EditorWindow
 {
-
-    private GameObject[] selectedObjects = new GameObject[0];
-
     [SerializeField]
     private class ConfigurationSettings
     {
@@ -19,7 +19,12 @@ public class AlignAndDistributeWindow : EditorWindow
             Renderer
         }
 
-        public CalculationMethodType CalculationMethod;
+        public CalculationMethodType CalculationMethod = CalculationMethodType.Origin;
+        public Dictionary<GameObject, Bounds> CachedBounds
+        {
+            get;
+            private set;
+        }
         public bool MatchRotation;
         public Vector3 Direction;
         public float MovementAmount;
@@ -30,6 +35,41 @@ public class AlignAndDistributeWindow : EditorWindow
             MatchRotation = matDirectionRot;
             Direction = customDir;
             MovementAmount = movementAmount;
+        }
+
+        public void GenerateCachedBounds(GameObject[] gameobjects)
+        {
+            CachedBounds = new Dictionary<GameObject, Bounds>();
+
+            foreach (GameObject gameObject in gameobjects)
+            {
+                Bounds bounds = new Bounds();
+
+                if (CalculationMethod == CalculationMethodType.Collider)
+                {
+                    List<Vector3> boundsPoints = new List<Vector3>();
+                    BoundsExtensions.GetColliderBoundsPoints(gameObject, boundsPoints, 0);
+
+                    bounds.center = boundsPoints[0];
+                    foreach (Vector3 point in boundsPoints)
+                    {
+                        bounds.Encapsulate(point);
+                    }
+                }
+                else if (CalculationMethod == CalculationMethodType.Renderer)
+                {
+                    List<Vector3> boundsPoints = new List<Vector3>();
+                    BoundsExtensions.GetRenderBoundsPoints(gameObject, boundsPoints, 0);
+
+                    bounds.center = boundsPoints[0];
+                    foreach (Vector3 point in boundsPoints)
+                    {
+                        bounds.Encapsulate(point);
+                    }
+                }
+                
+                CachedBounds.Add(gameObject, bounds);
+            }
         }
     }
 
@@ -79,7 +119,7 @@ public class AlignAndDistributeWindow : EditorWindow
             EditorGUILayout.Space();
             if (GUILayout.Button("Align objects"))
             {
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
         }
         else
@@ -88,37 +128,37 @@ public class AlignAndDistributeWindow : EditorWindow
             if (GUILayout.Button("+X"))
             {
                 alignSettings.Direction = Vector3.right;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             if (GUILayout.Button("-X"))
             {
                 alignSettings.Direction = Vector3.left;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             if (GUILayout.Button("+Y"))
             {
                 alignSettings.Direction = Vector3.up;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             if (GUILayout.Button("-Y"))
             {
                 alignSettings.Direction = Vector3.down;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             if (GUILayout.Button("+Z"))
             {
                 alignSettings.Direction = Vector3.forward;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             if (GUILayout.Button("-Z"))
             {
                 alignSettings.Direction = Vector3.back;
-                AlignObjects(selectedObjects, alignSettings);
+                AlignObjects(Selection.gameObjects, alignSettings);
             }
 
             EditorGUILayout.EndHorizontal();
@@ -142,7 +182,7 @@ public class AlignAndDistributeWindow : EditorWindow
                 EditorGUILayout.Space();
                 if (GUILayout.Button("Distribute objects"))
                 {
-                    DistributeObjects(selectedObjects, distributeSettings);
+                    DistributeObjects(Selection.gameObjects, distributeSettings);
                 }
             }
         }
@@ -153,19 +193,19 @@ public class AlignAndDistributeWindow : EditorWindow
                 if (GUILayout.Button("X"))
                 {
                     distributeSettings.Direction = Vector3.right;
-                    DistributeObjects(selectedObjects, distributeSettings);
+                    DistributeObjects(Selection.gameObjects, distributeSettings);
                 }
 
                 if (GUILayout.Button("Y"))
                 {
                     distributeSettings.Direction = Vector3.up;
-                    DistributeObjects(selectedObjects, distributeSettings);
+                    DistributeObjects(Selection.gameObjects, distributeSettings);
                 }
 
                 if (GUILayout.Button("Z"))
                 {
                     distributeSettings.Direction = Vector3.forward;
-                    DistributeObjects(selectedObjects, distributeSettings);
+                    DistributeObjects(Selection.gameObjects, distributeSettings);
                 }
             }
         }
@@ -187,7 +227,7 @@ public class AlignAndDistributeWindow : EditorWindow
                 EditorGUILayout.Space();
                 if (GUILayout.Button("Increment objects"))
                 {
-                    IncrementObjects(selectedObjects, incrementSettings);
+                    IncrementObjects(Selection.gameObjects, incrementSettings);
                 }
             }
         }
@@ -198,19 +238,19 @@ public class AlignAndDistributeWindow : EditorWindow
                 if (GUILayout.Button("Along X"))
                 {
                     incrementSettings.Direction = Vector3.right;
-                    IncrementObjects(selectedObjects, incrementSettings);
+                    IncrementObjects(Selection.gameObjects, incrementSettings);
                 }
 
                 if (GUILayout.Button("Along Y"))
                 {
                     incrementSettings.Direction = Vector3.up;
-                    IncrementObjects(selectedObjects, incrementSettings);
+                    IncrementObjects(Selection.gameObjects, incrementSettings);
                 }
 
                 if (GUILayout.Button("Along Z"))
                 {
                     incrementSettings.Direction = Vector3.forward;
-                    IncrementObjects(selectedObjects, incrementSettings);
+                    IncrementObjects(Selection.gameObjects, incrementSettings);
                 }
             }
         }
@@ -296,7 +336,7 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         if (gameObjects.Length <= 0) { return null; }
 
-        //we need to initialize our vectors, don't compare against zero
+        //we need to initialize vectors, but don't compare against zero
         Vector3 min = Vector3.zero;
         Vector3 max = Vector3.zero;
         bool initialPositionValid = false;
@@ -311,11 +351,26 @@ public class AlignAndDistributeWindow : EditorWindow
 
                 if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
                 {
-                    bounds = gameObj.GetComponent<Collider>().bounds;
+                    List<Vector3> boundsPoints = new List<Vector3>();
+                    BoundsExtensions.GetColliderBoundsPoints(gameObj, boundsPoints, 0);
+                    
+                    bounds.center = boundsPoints[0];
+                    foreach (Vector3 point in boundsPoints)
+                    {
+                        bounds.Encapsulate(point);
+                    }
+
                 }
                 else if (calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
                 {
-                    bounds = gameObj.GetComponent<Renderer>().bounds;
+                    List<Vector3> boundsPoints = new List<Vector3>();
+                    BoundsExtensions.GetRenderBoundsPoints(gameObj, boundsPoints, 0);
+
+                    bounds.center = boundsPoints[0];
+                    foreach (Vector3 point in boundsPoints)
+                    {
+                        bounds.Encapsulate(point);
+                    }
                 }
 
                 if (bounds == null)
@@ -377,11 +432,4 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         return new Vector3(Mathf.Abs(vector3.x), Mathf.Abs(vector3.y), Mathf.Abs(vector3.z));
     }
-
-    private void OnSelectionChange()
-    {
-        selectedObjects = Selection.gameObjects;
-        Debug.Log(Selection.gameObjects.Length);
-    }
-
 }
