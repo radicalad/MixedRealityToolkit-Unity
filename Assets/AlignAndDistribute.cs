@@ -4,6 +4,7 @@
 using Microsoft.MixedReality.Toolkit;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -91,10 +92,7 @@ public class AlignAndDistributeWindow : EditorWindow
     [SerializeField]
     private bool useCustomIncrementDirection = false;
 
-
-
-
-    [MenuItem("Mixed Reality Toolkit/Utilities/Aign and Distribute")]
+    [MenuItem("Mixed Reality Toolkit/Utilities/Align and Distribute")]
     public static void ShowWindow()
     {
         GetWindow<AlignAndDistributeWindow>(false, "Aign and Distribute", true);
@@ -260,42 +258,18 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         if (gameObjects.Length <= 0) { return; }
 
-        //Grab all the min max values per axis.
-        Tuple<Vector3, Vector3> MinMax = FindMinMax(gameObjects, settings.CalculationMethod);
-
-        //Check the direction - it will determine min or max
-        Vector3 ActiveMinMax;// = Vector3.zero;// = (Vector3.Dot(settings.Direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
-
-        if (Vector3.Dot(settings.Direction, Vector3.one) > 0)
-        {
-            Debug.Log("we're out maxin");
-            ActiveMinMax = MinMax.Item2;
-        }
-        else
-        {
-            ActiveMinMax = MinMax.Item1;
-            Debug.Log("MIN");
-        }
-        Debug.Log("active plane origin: " + Vector3.Scale(ActiveMinMax, VectAbs(settings.Direction)).ToString("F5"));
+        //Grab the min or max value
+        Vector3 ActiveValue = ActiveMinMaxValue(gameObjects, settings.CalculationMethod, settings.Direction);
 
         //Generate the plane to project against
-        Vector3 PlaneOrigin = Vector3.Scale(ActiveMinMax, VectAbs(settings.Direction));
+        Vector3 PlaneOrigin = Vector3.Scale(ActiveValue, VectAbs(settings.Direction));
         Plane AlignmentPlane = new Plane(VectAbs(settings.Direction), PlaneOrigin);
 
         foreach (var gameObj in gameObjects)
         {
             //use AABB if Collider or Renderer
-            Bounds bounds = new Bounds();
+            Bounds bounds = GenerateBoundsFromPoints(gameObj, settings.CalculationMethod);
             Vector3 additionalOffset = Vector3.zero;
-
-            if (settings.CalculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
-            {
-                bounds = gameObj.GetComponent<Collider>().bounds;
-            }
-            else if (settings.CalculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
-            {
-                bounds = gameObj.GetComponent<Renderer>().bounds;
-            }
 
             if (bounds.size != Vector3.zero)
             {
@@ -307,19 +281,70 @@ public class AlignAndDistributeWindow : EditorWindow
             //project the position on the plane and apply any additional offset
             gameObj.transform.position = AlignmentPlane.ClosestPointOnPlane(gameObj.transform.position) - additionalOffset;
         }
-
     }
 
     private void DistributeObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
 
-        foreach (var gameObj in gameObjects)
-        {
-            Debug.Log(gameObj.name);
-        }
+        GameObject[] sortedGameObjects = gameObjects.OrderBy((x) => Vector3.Scale(x.transform.position, VectAbs(settings.Direction)).sqrMagnitude).ToArray();
+        
+        //Grab the min or max value
+        Tuple <Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, settings.CalculationMethod);
 
+        Bounds b = new Bounds();
+        b.center = MinMax.Item1;
+        b.Encapsulate(MinMax.Item2);
+        DrawBox(b, Color.red, 5f);
+
+        Vector3 distStep = new Vector3((MinMax.Item2 - MinMax.Item1).x / (gameObjects.Length-1), (MinMax.Item2 - MinMax.Item1).y / (gameObjects.Length-1), (MinMax.Item2 - MinMax.Item1).z / (gameObjects.Length-1));
+        Vector3 distStepOnAxis = Vector3.Scale(distStep, VectAbs(settings.Direction));
+
+        for (int i = 0; i < gameObjects.Length; i++)
+        {
+            Vector3 newPos = gameObjects[i].transform.position;
+            Debug.Log("----------------------------------------------------------------------------------------");
+            Debug.Log("Original position: " + newPos.ToString("F5"));
+            for (int j = 0; j < 3; j++)
+            {
+                newPos[j] = (distStepOnAxis[j] != 0.0f) ? distStepOnAxis[j] * i : newPos[j];
+            }
+
+            Debug.Log("New Delta: " + newPos.ToString("F5"));
+
+            Vector3 additionalOffset = Vector3.Scale(MinMax.Item1, VectAbs(settings.Direction));
+
+            Debug.Log("New pos: " + (newPos + additionalOffset).ToString("F5"));
+
+            //use AABB if Collider or Renderer
+            Bounds bounds = GenerateBoundsFromPoints(gameObjects[i], settings.CalculationMethod);
+            Debug.Log("Bounds center: " + bounds.center);
+
+            if (bounds.size != Vector3.zero)
+            {
+                Vector3 offset = bounds.center - gameObjects[i].transform.position;
+                //special case the book ends
+                if(i == gameObjects.Length-1)
+                {
+                    additionalOffset = additionalOffset - offset + Vector3.Scale(bounds.extents, -settings.Direction);
+                }
+                else
+                {
+                        additionalOffset = additionalOffset - offset + Vector3.Scale(bounds.extents, settings.Direction);
+                }
+                /*                else
+                                {
+                                    //get the offset from the origin and AABB
+                                    Vector3 offset = (bounds.center - gameObjects[i].transform.position) - Vector3.Scale(bounds.extents, -settings.Direction);
+                                    additionalOffset = additionalOffset + offset;
+                                }*/
+            }
+            gameObjects[i].transform.position = newPos + additionalOffset;
+            Debug.DrawRay(bounds.c, Vector3.forward, Color.blue, 10f);
+        }
     }
+
+
 
     private void IncrementObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
@@ -329,10 +354,58 @@ public class AlignAndDistributeWindow : EditorWindow
         {
             Debug.Log(gameObj.name);
         }
-
     }
 
-    private Tuple<Vector3, Vector3> FindMinMax(GameObject[] gameObjects, ConfigurationSettings.CalculationMethodType calculationMethod)
+    private Bounds GenerateBoundsFromPoints(GameObject gameObj, ConfigurationSettings.CalculationMethodType calculationMethod)
+    {
+        Bounds bounds = new Bounds();
+        List<Vector3> boundsPoints = new List<Vector3>();
+
+        if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
+        {
+            BoundsExtensions.GetColliderBoundsPoints(gameObj, boundsPoints, 0);
+        }
+        else if (calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
+        {
+            BoundsExtensions.GetRenderBoundsPoints(gameObj, boundsPoints, 0);
+        }
+        else
+        {
+            //bail - wrong type
+            return bounds;
+        }
+
+        bounds.center = boundsPoints[0];
+        foreach (Vector3 point in boundsPoints)
+        {
+            bounds.Encapsulate(point);
+        }
+
+        return bounds;
+    }
+
+    private Vector3 ActiveMinMaxValue(GameObject[] gameObjects, ConfigurationSettings.CalculationMethodType calculationMethod, Vector3 direction)
+    {
+        //Grab all the min max values per axis.
+        Tuple<Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, calculationMethod);
+        /*
+        if (Vector3.Dot(direction, Vector3.one) > 0)
+        {
+            Debug.Log("we're out maxin");
+            ActiveMinMax = MinMax.Item2;
+        }
+        else
+        {
+            ActiveMinMax = MinMax.Item1;
+            Debug.Log("MIN");
+        }
+        */
+
+        //Check the direction - it will determine min or max
+        return (Vector3.Dot(direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
+    }
+
+    private Tuple<Vector3, Vector3> FindAndMinMax(GameObject[] gameObjects, ConfigurationSettings.CalculationMethodType calculationMethod)
     {
         if (gameObjects.Length <= 0) { return null; }
 
@@ -347,33 +420,11 @@ public class AlignAndDistributeWindow : EditorWindow
         {
             foreach (GameObject gameObj in gameObjects)
             {
-                Bounds bounds = new Bounds();
+                Bounds bounds = GenerateBoundsFromPoints(gameObj, calculationMethod);
+                
+                DrawBox(bounds, Color.yellow, 5f);
 
-                if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
-                {
-                    List<Vector3> boundsPoints = new List<Vector3>();
-                    BoundsExtensions.GetColliderBoundsPoints(gameObj, boundsPoints, 0);
-                    
-                    bounds.center = boundsPoints[0];
-                    foreach (Vector3 point in boundsPoints)
-                    {
-                        bounds.Encapsulate(point);
-                    }
-
-                }
-                else if (calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
-                {
-                    List<Vector3> boundsPoints = new List<Vector3>();
-                    BoundsExtensions.GetRenderBoundsPoints(gameObj, boundsPoints, 0);
-
-                    bounds.center = boundsPoints[0];
-                    foreach (Vector3 point in boundsPoints)
-                    {
-                        bounds.Encapsulate(point);
-                    }
-                }
-
-                if (bounds == null)
+                if (bounds.size == Vector3.zero)
                 {
                     //invalid comparison, add it to the list and compare the gameobject origin
                     fallbackToOrigin = true;
@@ -387,13 +438,7 @@ public class AlignAndDistributeWindow : EditorWindow
                     min = max = bounds.center;
                     initialPositionValid = true;
                 }
-
-                Debug.Log("------");
-                Debug.Log("Name: " + gameObj.name);
-                Debug.Log("Object center: " + bounds.center);
-                Debug.Log("Object min: " + bounds.min);
-                Debug.Log("Object max: " + bounds.max);
-
+                 
                 for (int i = 0; i < 3; i++)
                 {
                     //find the min-most or max-most value
@@ -432,4 +477,37 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         return new Vector3(Mathf.Abs(vector3.x), Mathf.Abs(vector3.y), Mathf.Abs(vector3.z));
     }
+
+    void DrawBox(Bounds bounds, Color color, float duration)
+    {
+        
+        Vector3 v3Center = bounds.center;
+        Vector3 v3Extents = bounds.extents;
+
+        Vector3 v3FrontTopLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y + v3Extents.y, v3Center.z - v3Extents.z);  // Front top left corner
+        Vector3 v3FrontTopRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y + v3Extents.y, v3Center.z - v3Extents.z);  // Front top right corner
+        Vector3 v3FrontBottomLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y - v3Extents.y, v3Center.z - v3Extents.z);  // Front bottom left corner
+        Vector3 v3FrontBottomRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y - v3Extents.y, v3Center.z - v3Extents.z);  // Front bottom right corner
+        Vector3 v3BackTopLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y + v3Extents.y, v3Center.z + v3Extents.z);  // Back top left corner
+        Vector3 v3BackTopRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y + v3Extents.y, v3Center.z + v3Extents.z);  // Back top right corner
+        Vector3 v3BackBottomLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y - v3Extents.y, v3Center.z + v3Extents.z);  // Back bottom left corner
+        Vector3 v3BackBottomRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y - v3Extents.y, v3Center.z + v3Extents.z);  // Back bottom right corner
+
+        Debug.DrawLine(v3FrontTopLeft, v3FrontTopRight, color, duration);
+        Debug.DrawLine(v3FrontTopRight, v3FrontBottomRight, color, duration);
+        Debug.DrawLine(v3FrontBottomRight, v3FrontBottomLeft, color, duration);
+        Debug.DrawLine(v3FrontBottomLeft, v3FrontTopLeft, color, duration);
+
+        Debug.DrawLine(v3BackTopLeft, v3BackTopRight, color, duration);
+        Debug.DrawLine(v3BackTopRight, v3BackBottomRight, color, duration);
+        Debug.DrawLine(v3BackBottomRight, v3BackBottomLeft, color, duration);
+        Debug.DrawLine(v3BackBottomLeft, v3BackTopLeft, color, duration);
+
+        Debug.DrawLine(v3FrontTopLeft, v3BackTopLeft, color, duration);
+        Debug.DrawLine(v3FrontTopRight, v3BackTopRight, color, duration);
+        Debug.DrawLine(v3FrontBottomRight, v3BackBottomRight, color, duration);
+        Debug.DrawLine(v3FrontBottomLeft, v3BackBottomLeft, color, duration);
+    }
+
+
 }
