@@ -24,7 +24,7 @@ public class AlignAndDistributeWindow : EditorWindow
         public Dictionary<GameObject, Bounds> CachedBounds
         {
             get;
-            private set;
+            set;
         }
         public bool MatchRotation;
         public Vector3 Direction;
@@ -36,41 +36,6 @@ public class AlignAndDistributeWindow : EditorWindow
             MatchRotation = matDirectionRot;
             Direction = customDir;
             MovementAmount = movementAmount;
-        }
-
-        public void GenerateCachedBounds(GameObject[] gameobjects)
-        {
-            CachedBounds = new Dictionary<GameObject, Bounds>();
-
-            foreach (GameObject gameObject in gameobjects)
-            {
-                Bounds bounds = new Bounds();
-
-                if (CalculationMethod == CalculationMethodType.Collider)
-                {
-                    List<Vector3> boundsPoints = new List<Vector3>();
-                    BoundsExtensions.GetColliderBoundsPoints(gameObject, boundsPoints, 0);
-
-                    bounds.center = boundsPoints[0];
-                    foreach (Vector3 point in boundsPoints)
-                    {
-                        bounds.Encapsulate(point);
-                    }
-                }
-                else if (CalculationMethod == CalculationMethodType.Renderer)
-                {
-                    List<Vector3> boundsPoints = new List<Vector3>();
-                    BoundsExtensions.GetRenderBoundsPoints(gameObject, boundsPoints, 0);
-
-                    bounds.center = boundsPoints[0];
-                    foreach (Vector3 point in boundsPoints)
-                    {
-                        bounds.Encapsulate(point);
-                    }
-                }
-                
-                CachedBounds.Add(gameObject, bounds);
-            }
         }
     }
 
@@ -288,65 +253,102 @@ public class AlignAndDistributeWindow : EditorWindow
         if (gameObjects.Length <= 0) { return; }
 
         GameObject[] sortedGameObjects = gameObjects.OrderBy((x) => Vector3.Scale(x.transform.position, VectAbs(settings.Direction)).sqrMagnitude).ToArray();
-        
+
         //Grab the min or max value
-        Tuple <Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, settings.CalculationMethod);
+        //Since positioning happens from Min -> Max, remove the last item size to make the math work
+        Tuple<Vector3, Vector3> MinMax = FindAndMinMax(sortedGameObjects, settings.CalculationMethod);
+
+        Vector3 TotalMargin = MinMax.Item2;
+
+        for (int i = 0; i < sortedGameObjects.Length; i++)
+        {
+            TotalMargin -= Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod).size, VectAbs(settings.Direction));
+        }
+
+
+        //Since positioning happens from Min -> Max, remove the last item size, otherwise the last item will begin at the edge of where it should end
+        Vector3 MaxMinusOne = MinMax.Item2 - Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[sortedGameObjects.Length - 1], settings.CalculationMethod).size, VectAbs(settings.Direction));
+        Vector3 MinMinusOne = MinMax.Item1 + Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[0], settings.CalculationMethod).size, VectAbs(settings.Direction));
+
+        // ensure the distribution area is bigger than 0
+        for (int i = 0; i < 3; i++)
+        {
+            if (VectAbs(settings.Direction)[i] != 0.0f)
+            {
+                //A valid direction to distribute against
+                if(MaxMinusOne[i] - MinMinusOne[i] < 0.0f)
+                {
+                    return;
+                }
+            }
+        }
 
         Bounds b = new Bounds();
         b.center = MinMax.Item1;
         b.Encapsulate(MinMax.Item2);
-        DrawBox(b, Color.red, 5f);
+        DrawBox(b, Color.blue, 5f);
 
-        Vector3 distStep = new Vector3((MinMax.Item2 - MinMax.Item1).x / (gameObjects.Length-1), (MinMax.Item2 - MinMax.Item1).y / (gameObjects.Length-1), (MinMax.Item2 - MinMax.Item1).z / (gameObjects.Length-1));
+        Bounds margin = new Bounds();
+        margin.center = MinMax.Item1;
+        margin.Encapsulate(TotalMargin);
+        DrawBox(margin, Color.red, 5f);
+
+        Vector3 distStep = new Vector3(TotalMargin.x / (sortedGameObjects.Length - 1), TotalMargin.y / (sortedGameObjects.Length - 1), TotalMargin.z / (sortedGameObjects.Length - 1));
         Vector3 distStepOnAxis = Vector3.Scale(distStep, VectAbs(settings.Direction));
 
-        for (int i = 0; i < gameObjects.Length; i++)
+        for (int i = 0; i < sortedGameObjects.Length; i++)
         {
-            Vector3 newPos = gameObjects[i].transform.position;
-            Debug.Log("----------------------------------------------------------------------------------------");
-            Debug.Log("Original position: " + newPos.ToString("F5"));
+            Vector3 newPos = sortedGameObjects[i].transform.position;
+
+            Vector3 additionalOffset = Vector3.zero;
+
             for (int j = 0; j < 3; j++)
             {
                 newPos[j] = (distStepOnAxis[j] != 0.0f) ? distStepOnAxis[j] * i : newPos[j];
             }
 
-            Debug.Log("New Delta: " + newPos.ToString("F5"));
-
-            Vector3 additionalOffset = Vector3.Scale(MinMax.Item1, VectAbs(settings.Direction));
-
-            Debug.Log("New pos: " + (newPos + additionalOffset).ToString("F5"));
-
             //use AABB if Collider or Renderer
-            Bounds bounds = GenerateBoundsFromPoints(gameObjects[i], settings.CalculationMethod);
-            Debug.Log("Bounds center: " + bounds.center);
+            Bounds bounds = GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod);
 
             if (bounds.size != Vector3.zero)
             {
-                Vector3 offset = bounds.center - gameObjects[i].transform.position;
-                //special case the book ends
-                if(i == gameObjects.Length-1)
-                {
-                    additionalOffset = additionalOffset - offset + Vector3.Scale(bounds.extents, -settings.Direction);
-                }
-                else
-                {
-                        additionalOffset = additionalOffset - offset + Vector3.Scale(bounds.extents, settings.Direction);
-                }
-                /*                else
-                                {
-                                    //get the offset from the origin and AABB
-                                    Vector3 offset = (bounds.center - gameObjects[i].transform.position) - Vector3.Scale(bounds.extents, -settings.Direction);
-                                    additionalOffset = additionalOffset + offset;
-                                }*/
+
+
             }
-            gameObjects[i].transform.position = newPos + additionalOffset;
-            Debug.DrawRay(bounds.c, Vector3.forward, Color.blue, 10f);
+            sortedGameObjects[i].transform.position = newPos + additionalOffset;
         }
-    }
+            /*
 
+            Vector3 distStep = new Vector3((MaxMinusOne - MinMinusOne).x / (sortedGameObjects.Length-1), (MaxMinusOne - MinMinusOne).y / (sortedGameObjects.Length-1), (MaxMinusOne - MinMinusOne).z / (sortedGameObjects.Length-1));
 
+            for (int i = 0; i < sortedGameObjects.Length; i++)
+            {
+                Vector3 newPos = sortedGameObjects[i].transform.position;
+                Vector3 additionalOffset = Vector3.zero;
 
-    private void IncrementObjects(GameObject[] gameObjects, ConfigurationSettings settings)
+                //use AABB if Collider or Renderer
+                Bounds bounds = GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod);
+
+                for (int j = 0; j < 3; j++)
+                {
+                    newPos[j] = (distStepOnAxis[j] != 0.0f) ? distStepOnAxis[j] * i : newPos[j];
+                }
+
+                if (bounds.size != Vector3.zero)
+                {
+                    Vector3 offset = newPos - Vector3.Scale(bounds.center, settings.Direction);
+                    Debug.Log("newPos: " + newPos.ToString("F5") + ", " + bounds.center);
+                    additionalOffset = offset;
+                    //additionalOffset = Vector3.Scale(MinMinusOne, VectAbs(settings.Direction)) + Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[0], settings.CalculationMethod).size, VectAbs(settings.Direction));
+                    //additionalOffset = additionalOffset - offset;// + Vector3.Scale(bounds.extents, settings.Direction);
+                }
+                //sortedGameObjects[i].transform.position = newPos + additionalOffset;
+                //Debug.DrawRay(bounds.center, Vector3.right, Color.black, 5f);
+                }
+            }*/
+        }
+
+        private void IncrementObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
 
@@ -418,6 +420,8 @@ public class AlignAndDistributeWindow : EditorWindow
 
         if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider || calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
         {
+
+
             foreach (GameObject gameObj in gameObjects)
             {
                 Bounds bounds = GenerateBoundsFromPoints(gameObj, calculationMethod);
