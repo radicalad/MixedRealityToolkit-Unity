@@ -27,13 +27,19 @@ public class AlignAndDistributeWindow : EditorWindow
             set;
         }
         public bool MatchRotation;
+        public bool UseWorldSpace;
         public Vector3 Direction;
-        public float MovementAmount;
+        public Vector3 MovementAmount;
 
-        public ConfigurationSettings(CalculationMethodType calculationMethod = CalculationMethodType.Origin, bool matDirectionRot = false, Vector3 customDir = default(Vector3), float movementAmount = 0.0f)
+        public ConfigurationSettings(CalculationMethodType calculationMethod = CalculationMethodType.Origin,
+                                     bool matDirectionRot = false,
+                                     bool useWorldSpace = true,
+                                     Vector3 customDir = default(Vector3),
+                                     Vector3 movementAmount = default(Vector3))
         {
             CalculationMethod = calculationMethod;
             MatchRotation = matDirectionRot;
+            UseWorldSpace = useWorldSpace;
             Direction = customDir;
             MovementAmount = movementAmount;
         }
@@ -53,9 +59,6 @@ public class AlignAndDistributeWindow : EditorWindow
 
     [SerializeField]
     private bool useCustomDistributeDirection = false;
-
-    [SerializeField]
-    private bool useCustomIncrementDirection = false;
 
     [MenuItem("Mixed Reality Toolkit/Utilities/Align and Distribute")]
     public static void ShowWindow()
@@ -141,7 +144,7 @@ public class AlignAndDistributeWindow : EditorWindow
         {
             using (new EditorGUI.IndentLevelScope())
             {
-                EditorGUILayout.Vector3Field("Custom Direction", distributeSettings.Direction);
+                distributeSettings.Direction = EditorGUILayout.Vector3Field("Custom Direction", distributeSettings.Direction);
                 EditorGUILayout.Space();
                 if (GUILayout.Button("Distribute objects"))
                 {
@@ -172,54 +175,25 @@ public class AlignAndDistributeWindow : EditorWindow
                 }
             }
         }
+        EditorGUILayout.Space();
 
         EditorGUILayout.LabelField("Increment", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
-        useCustomIncrementDirection = GUILayout.Toggle(useCustomIncrementDirection, "Use Custom Direction");
+        incrementSettings.MovementAmount = EditorGUILayout.Vector3Field("Increment Amount", incrementSettings.MovementAmount);
         EditorGUILayout.Space();
 
-        EditorGUILayout.FloatField("Increment Amount", incrementSettings.MovementAmount);
-        EditorGUILayout.Space();
-
-        if (useCustomIncrementDirection)
+        using (new EditorGUI.IndentLevelScope())
         {
-            using (new EditorGUI.IndentLevelScope())
+            if (GUILayout.Button("Increment objects"))
             {
-                EditorGUILayout.Vector3Field("Custom Direction", incrementSettings.Direction);
-                EditorGUILayout.Space();
-                if (GUILayout.Button("Increment objects"))
-                {
-                    IncrementObjects(Selection.gameObjects, incrementSettings);
-                }
-            }
-        }
-        else
-        {
-            using (new EditorGUI.IndentLevelScope())
-            {
-                if (GUILayout.Button("Along X"))
-                {
-                    incrementSettings.Direction = Vector3.right;
-                    IncrementObjects(Selection.gameObjects, incrementSettings);
-                }
-
-                if (GUILayout.Button("Along Y"))
-                {
-                    incrementSettings.Direction = Vector3.up;
-                    IncrementObjects(Selection.gameObjects, incrementSettings);
-                }
-
-                if (GUILayout.Button("Along Z"))
-                {
-                    incrementSettings.Direction = Vector3.forward;
-                    IncrementObjects(Selection.gameObjects, incrementSettings);
-                }
+                IncrementObjects(Selection.gameObjects, incrementSettings);
             }
         }
     }
 
-    private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settings)
+
+private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
 
@@ -252,109 +226,77 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         if (gameObjects.Length <= 0) { return; }
 
-        GameObject[] sortedGameObjects = gameObjects.OrderBy((x) => Vector3.Scale(x.transform.position, VectAbs(settings.Direction)).sqrMagnitude).ToArray();
-
         //Grab the min or max value
-        //Since positioning happens from Min -> Max, remove the last item size to make the math work
-        Tuple<Vector3, Vector3> MinMax = FindAndMinMax(sortedGameObjects, settings.CalculationMethod);
+        Tuple<Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, settings.CalculationMethod);
 
-        Vector3 TotalMargin = MinMax.Item2;
+        GameObject[] sortedGameObjects = gameObjects.OrderBy((x) => Vector3.Scale(MinMax.Item1 - x.transform.position, VectAbs(settings.Direction)).sqrMagnitude).ToArray();
 
-        for (int i = 0; i < sortedGameObjects.Length; i++)
-        {
-            TotalMargin -= Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod).size, VectAbs(settings.Direction));
-        }
-
-
-        //Since positioning happens from Min -> Max, remove the last item size, otherwise the last item will begin at the edge of where it should end
-        Vector3 MaxMinusOne = MinMax.Item2 - Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[sortedGameObjects.Length - 1], settings.CalculationMethod).size, VectAbs(settings.Direction));
-        Vector3 MinMinusOne = MinMax.Item1 + Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[0], settings.CalculationMethod).size, VectAbs(settings.Direction));
+        Vector3 TotalMargin = MinMax.Item1 - MinMax.Item2;
 
         // ensure the distribution area is bigger than 0
         for (int i = 0; i < 3; i++)
         {
             if (VectAbs(settings.Direction)[i] != 0.0f)
-            {
-                //A valid direction to distribute against
-                if(MaxMinusOne[i] - MinMinusOne[i] < 0.0f)
+            {                
+                if (Mathf.Abs(TotalMargin[i]) < Mathf.Epsilon)
                 {
+                    //Bail, the delta between min and max on axis is too small
+                    Debug.Assert((TotalMargin[i] > Mathf.Epsilon), "Align & Distribute: The distance along the specified direction is too small.");
                     return;
                 }
             }
         }
-
-        Bounds b = new Bounds();
-        b.center = MinMax.Item1;
-        b.Encapsulate(MinMax.Item2);
-        DrawBox(b, Color.blue, 5f);
-
-        Bounds margin = new Bounds();
-        margin.center = MinMax.Item1;
-        margin.Encapsulate(TotalMargin);
-        DrawBox(margin, Color.red, 5f);
 
         Vector3 distStep = new Vector3(TotalMargin.x / (sortedGameObjects.Length - 1), TotalMargin.y / (sortedGameObjects.Length - 1), TotalMargin.z / (sortedGameObjects.Length - 1));
         Vector3 distStepOnAxis = Vector3.Scale(distStep, VectAbs(settings.Direction));
 
         for (int i = 0; i < sortedGameObjects.Length; i++)
         {
-            Vector3 newPos = sortedGameObjects[i].transform.position;
+            Debug.Log("DistanceStep: " + distStep.ToString("F5") + ", OriginalPosition" + sortedGameObjects[i].transform.position.ToString("F5"));
+
+            Vector3 newPos = MinMax.Item1;
 
             Vector3 additionalOffset = Vector3.zero;
 
             for (int j = 0; j < 3; j++)
             {
-                newPos[j] = (distStepOnAxis[j] != 0.0f) ? distStepOnAxis[j] * i : newPos[j];
+                newPos[j] = (distStepOnAxis[j] != 0.0f) ? newPos[j] - (distStepOnAxis[j] * i) : sortedGameObjects[i].transform.position[j];
             }
 
             //use AABB if Collider or Renderer
             Bounds bounds = GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod);
-
+           
             if (bounds.size != Vector3.zero)
             {
-
-
+                //get the offset from the origin and AABB
+                additionalOffset = Vector3.Scale(bounds.center - sortedGameObjects[i].transform.position, VectAbs(settings.Direction));
             }
+
             sortedGameObjects[i].transform.position = newPos + additionalOffset;
         }
-            /*
 
-            Vector3 distStep = new Vector3((MaxMinusOne - MinMinusOne).x / (sortedGameObjects.Length-1), (MaxMinusOne - MinMinusOne).y / (sortedGameObjects.Length-1), (MaxMinusOne - MinMinusOne).z / (sortedGameObjects.Length-1));
+    }
 
-            for (int i = 0; i < sortedGameObjects.Length; i++)
-            {
-                Vector3 newPos = sortedGameObjects[i].transform.position;
-                Vector3 additionalOffset = Vector3.zero;
-
-                //use AABB if Collider or Renderer
-                Bounds bounds = GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod);
-
-                for (int j = 0; j < 3; j++)
-                {
-                    newPos[j] = (distStepOnAxis[j] != 0.0f) ? distStepOnAxis[j] * i : newPos[j];
-                }
-
-                if (bounds.size != Vector3.zero)
-                {
-                    Vector3 offset = newPos - Vector3.Scale(bounds.center, settings.Direction);
-                    Debug.Log("newPos: " + newPos.ToString("F5") + ", " + bounds.center);
-                    additionalOffset = offset;
-                    //additionalOffset = Vector3.Scale(MinMinusOne, VectAbs(settings.Direction)) + Vector3.Scale(GenerateBoundsFromPoints(sortedGameObjects[0], settings.CalculationMethod).size, VectAbs(settings.Direction));
-                    //additionalOffset = additionalOffset - offset;// + Vector3.Scale(bounds.extents, settings.Direction);
-                }
-                //sortedGameObjects[i].transform.position = newPos + additionalOffset;
-                //Debug.DrawRay(bounds.center, Vector3.right, Color.black, 5f);
-                }
-            }*/
-        }
-
-        private void IncrementObjects(GameObject[] gameObjects, ConfigurationSettings settings)
+    private void IncrementObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
 
         foreach (var gameObj in gameObjects)
         {
-            Debug.Log(gameObj.name);
+            Debug.Log("Movement Amount: " + settings.MovementAmount);
+            gameObj.transform.position += settings.MovementAmount;
+        }
+    }
+
+    private static void SetPosition(Transform transform, bool useWorldSpace, Vector3 newValue)
+    {
+        if(useWorldSpace)
+        {
+            transform.position = newValue;
+        }
+        else
+        {
+            transform.localPosition = newValue;
         }
     }
 
@@ -390,18 +332,6 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         //Grab all the min max values per axis.
         Tuple<Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, calculationMethod);
-        /*
-        if (Vector3.Dot(direction, Vector3.one) > 0)
-        {
-            Debug.Log("we're out maxin");
-            ActiveMinMax = MinMax.Item2;
-        }
-        else
-        {
-            ActiveMinMax = MinMax.Item1;
-            Debug.Log("MIN");
-        }
-        */
 
         //Check the direction - it will determine min or max
         return (Vector3.Dot(direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
@@ -415,13 +345,10 @@ public class AlignAndDistributeWindow : EditorWindow
         Vector3 min = Vector3.zero;
         Vector3 max = Vector3.zero;
         bool initialPositionValid = false;
-        bool fallbackToOrigin = false;
         List<GameObject> fallbackObjects = new List<GameObject>();
 
         if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider || calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
         {
-
-
             foreach (GameObject gameObj in gameObjects)
             {
                 Bounds bounds = GenerateBoundsFromPoints(gameObj, calculationMethod);
@@ -431,7 +358,6 @@ public class AlignAndDistributeWindow : EditorWindow
                 if (bounds.size == Vector3.zero)
                 {
                     //invalid comparison, add it to the list and compare the gameobject origin
-                    fallbackToOrigin = true;
                     fallbackObjects.Add(gameObj);
                     continue;
                 }
@@ -446,13 +372,13 @@ public class AlignAndDistributeWindow : EditorWindow
                 for (int i = 0; i < 3; i++)
                 {
                     //find the min-most or max-most value
-                    min[i] = (bounds.min[i] < min[i]) ? bounds.min[i] : min[i];
-                    max[i] = (bounds.max[i] > max[i]) ? bounds.max[i] : max[i];
+                    min[i] = (bounds.center[i] < min[i]) ? bounds.center[i] : min[i];
+                    max[i] = (bounds.center[i] > max[i]) ? bounds.center[i] : max[i];
                 }
             }
         }
 
-        if (calculationMethod == ConfigurationSettings.CalculationMethodType.Origin || fallbackToOrigin == true)
+        if (calculationMethod == ConfigurationSettings.CalculationMethodType.Origin || fallbackObjects.Count > 0)
         {
             if (initialPositionValid == false)
             {
@@ -461,8 +387,8 @@ public class AlignAndDistributeWindow : EditorWindow
                 initialPositionValid = true;
             }
 
-            GameObject[] GameObjectQueue = (fallbackToOrigin == true) ? fallbackObjects.ToArray() : gameObjects;
-            foreach (GameObject gameObj in GameObjectQueue)
+            GameObject[] gameObjectQueue = (fallbackObjects.Count > 0) ? fallbackObjects.ToArray() : gameObjects;
+            foreach (GameObject gameObj in gameObjectQueue)
             {
                 for (int i = 0; i < 3; i++)
                 {
@@ -512,6 +438,5 @@ public class AlignAndDistributeWindow : EditorWindow
         Debug.DrawLine(v3FrontBottomRight, v3BackBottomRight, color, duration);
         Debug.DrawLine(v3FrontBottomLeft, v3BackBottomLeft, color, duration);
     }
-
 
 }
