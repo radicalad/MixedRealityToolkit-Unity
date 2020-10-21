@@ -6,11 +6,9 @@ The *ManipulationHandler* script allows for an object to be made movable, scalab
 
 ## How to use the manipulation handler
 
-Add the [`ManipulationHandler.cs`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/Input/Handlers/ManipulationHandler.cs) component to a GameObject.
+Add the `ManipulationHandler` script component to a GameObject. Make sure to also add a collider to the object, matching its grabbable bounds.
 
-Make sure to also add a collider to the object, matching its grabbable bounds. To make the object respond to near articulated hand input, add the [`NearInteractionGrabbable.cs`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.Services/InputSystem/NearInteractionGrabbable.cs) script as well.
-
-If you wish to set minimum or maximum values for the object's scale, you can add a [`TransformScaleHandler`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/Input/Handlers/TransformScaleHandler.cs) script.
+To make the object respond to near articulated hand input, add the `NearInteractionGrabbable` script as well.
 
 ![Manipulation Handler](../Documentation/Images/ManipulationHandler/MRTK_ManipulationHandler_Howto.png)
 
@@ -53,7 +51,7 @@ Specifies how the object will rotate when it is being grabbed with one hand.
 
 * *Maintain original rotation*: Does not rotate object as it is being moved
 * *Maintain rotation to user*: Maintains the object's original rotation for X/Y axis to the user
-* *Gravity aligned maintain rotation to user*: Maintains object's original rotation to user, but makes the object vertical. Useful for bounding boxes.
+* *Gravity aligned maintain rotation to user*: Maintains object's original rotation to user, but makes the object vertical. Useful for objects with a bounds control.
 * *Face user*: Ensures object always faces the user. Useful for slates/panels.
 * *Face away from user*: Ensures object always faces away from user. Useful for slates/panels that are configured backwards.
 * *Rotate about object center*:  Only works for articulated hands/controllers. Rotate object using rotation of the hand/controller, but about the object center point. Useful for inspecting at a distance.

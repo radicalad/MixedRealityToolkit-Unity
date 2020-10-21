@@ -17,7 +17,11 @@ UnityPackageManager/
 project.json
 project.lock.json
 *.package
-
+**/.DS_Store
+Assets/XR/
+Assets/XR.meta
+Assets/Oculus/
+Assets/Oculus.meta
 # ============ #
 # Certificates #
 # ============ #
@@ -94,10 +98,15 @@ doc/
 # ========================= #
 # MSBuildForUnity generated #
 # ========================= #
-Assets/MixedRealityToolkit.Providers/WindowsMixedReality/DotNetAdapter/Plugins*
 MSBuildForUnity.Common.props
-.obj
 /*.msb4u.csproj.meta
 *.msb4u.csproj.meta
 /*.msb4u.sln.meta
 *.msb4u.sln.meta
+Dependencies*
+Nuget.config*
+
+# =========== #
+# Other files #
+# =========== #
+.DS_Store

@@ -2,7 +2,10 @@
 
 ![Bounding box](../Documentation/Images/BoundingBox/MRTK_BoundingBox_Main.png)
 
-The [`BoundingBox.cs`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/UX/Scripts/BoundingBox/BoundingBox.cs) script provides basic functionality for transforming objects in mixed reality. A bounding box will show a cube around the hologram to indicate that it can be interacted with. Handles on the corners and edges of the cube allow scaling or rotating the object. The bounding box also reacts to user input. On HoloLens 2, for example, the bounding box responds to finger proximity, providing visual feedback to help perceive the distance from the object. All interactions and visuals can be easily customized.
+> [!NOTE]
+> Bounding box is deprecated and replaced by its successor [bounds control](README_BoundsControl.md). Use [one of the migration options](#migrating-to-bounds-control) to upgrade existing game objects.
+
+The [`BoundingBox.cs`](xref:Microsoft.MixedReality.Toolkit.UI.BoundingBox) script provides basic functionality for transforming objects in mixed reality. A bounding box will show a cube around the hologram to indicate that it can be interacted with. Handles on the corners and edges of the cube allow scaling or rotating the object. The bounding box also reacts to user input. On HoloLens 2, for example, the bounding box responds to finger proximity, providing visual feedback to help perceive the distance from the object. All interactions and visuals can be easily customized.
 
 For more information, see [Bounding box and App bar](https://docs.microsoft.com/windows/mixed-reality/app-bar-and-bounding-box) in the Windows Dev Center.
 
@@ -115,11 +118,11 @@ There are several options to activate the bounding box interface.
 
 ### Scale minimum
 
-The minimum allowed scale. This property is deprecated and it is preferable to add a [`MinMaxScaleConstraint`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/Input/Handlers/MinMaxScaleConstraint.cs) script. If this script is added, the minimum scale will be taken from it instead of from the bounding box.
+The minimum allowed scale. This property is deprecated and it is preferable to add a [`MinMaxScaleConstraint`](xref:Microsoft.MixedReality.Toolkit.UI.MinMaxScaleConstraint) script. If this script is added, the minimum scale will be taken from it instead of from the bounding box.
 
 ### Scale maximum
 
-The maximum allowed scale. This property is deprecated and it is preferable to add a [`MinMaxScaleConstraint`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/Input/Handlers/MinMaxScaleConstraint.cs) script. If this script is added, the maximum scale will be taken from it instead of from the bounding box.
+The maximum allowed scale. This property is deprecated and it is preferable to add a [`MinMaxScaleConstraint`](xref:Microsoft.MixedReality.Toolkit.UI.MinMaxScaleConstraint) script. If this script is added, the maximum scale will be taken from it instead of from the bounding box.
 
 ### Box display
 
@@ -137,14 +140,14 @@ Bounding box provides the following events. This example uses these events to pl
 
 * **Rotate Started**: Fired when rotation starts.
 * **Rotate Ended**: Fired when rotation ends.
-* **Scale Started**: Fires when scaling ends.
+* **Scale Started**: Fires when scaling starts.
 * **Scale Ended**: Fires when scaling ends.
 
 <img src="../Documentation/Images/BoundingBox/MRTK_BoundingBox_Events.png" width="450">
 
 ## Handle styles
 
-By default, when you just assign the [`BoundingBox.cs`](https://github.com/Microsoft/MixedRealityToolkit-Unity/blob/mrtk_release/Assets/MixedRealityToolkit.SDK/Features/UX/Scripts/BoundingBox/BoundingBox.cs) script, it will show the handle of the HoloLens 1st gen style. To use HoloLens 2 style handles, you need to assign proper handle prefabs and materials.
+By default, when you just assign the [`BoundingBox.cs`](xref:Microsoft.MixedReality.Toolkit.UI.BoundingBox) script, it will show the handle of the HoloLens 1st gen style. To use HoloLens 2 style handles, you need to assign proper handle prefabs and materials.
 
 ![Bounding Box](../Documentation/Images/BoundingBox/MRTK_BoundingBox_HandleStyles1.png)
 
@@ -184,3 +187,10 @@ A bounding box can be combined with [`ManipulationHandler.cs`](README_Manipulati
 <img src="../Documentation/Images/BoundingBox/MRTK_BoundingBox_ManipulationHandler.png" width="450">
 
 In order for the bounding box edges to behave the same way when moving it using [`ManipulationHandler`](README_ManipulationHandler.md)'s far interaction, it is advised to connect its events for *On Manipulation Started* / *On Manipulation Ended* to `BoundingBox.HighlightWires` / `BoundingBox.UnhighlightWires` respectively, as shown in the screenshot above.
+
+## Migrating to bounds control
+Existing prefabs and instances using [bounding box](README_BoundingBox.md) can be upgraded to the new bounds control via the [migration window](Tools/MigrationWindow.md) which is part of the MRTK tools package.
+
+For upgrading individual instances of bounding box there's also an a migration option inside the property inspector of the component.
+
+<img src="../Documentation/Images/BoundsControl/MRTK_BoundsControl_Migrate.png" width="450">
