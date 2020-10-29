@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Animations;
 
 public class AlignAndDistributeWindow : EditorWindow
 {
@@ -64,10 +65,11 @@ public class AlignAndDistributeWindow : EditorWindow
     private bool showInEditorWindow = true;
 
     [SerializeField]
-    private GameObject sceneWindowScope = null;
+    Tuple<Vector3, Vector3> alignMinMax = new Tuple<Vector3, Vector3>(Vector3.zero, Vector3.zero);
 
     [SerializeField]
-    private AlignAndDistributeVisualizer sceneViz = null;
+    Tuple<Vector3, Vector3> distributeMinMax = new Tuple<Vector3, Vector3>(Vector3.zero, Vector3.zero);
+
 
     private readonly float sectionSpace = 24.0f;
 
@@ -77,37 +79,40 @@ public class AlignAndDistributeWindow : EditorWindow
         GetWindow<AlignAndDistributeWindow>(false, "Aign and Distribute", true);
     }
 
+    private void OnFocus()
+    {
+        SceneView.duringSceneGui -= SceneView_duringSceneGui;
+        SceneView.duringSceneGui += SceneView_duringSceneGui;
+    }
+
     private void OnDisable()
     {
-        if(sceneWindowScope != null)
-        {
-            DestroyImmediate(sceneWindowScope);
-            sceneWindowScope = null;
-        }
+        SceneView.duringSceneGui -= this.SceneView_duringSceneGui;
+    }
+
+    private void OnSelectionChange()
+    {
+        alignMinMax = FindAndMinMax(Selection.gameObjects, alignSettings.CalculationMethod);
+        distributeMinMax = FindAndMinMax(Selection.gameObjects, distributeSettings.CalculationMethod);
+    }
+
+    private void SceneView_duringSceneGui(SceneView obj)
+    {
+        DrawAlignButton();
+    }
+
+    private void DrawAlignButton()
+    {
+        Handles.Label(Vector3.zero, "+Z");
+        Handles.Button(Vector3.zero, Quaternion.identity, HandleUtility.GetHandleSize(Vector3.zero), HandleUtility.GetHandleSize(Vector3.zero), Handles.RectangleHandleCap);
     }
 
     private void OnGUI()
     {
         EditorGUI.BeginChangeCheck();
 
-        showInEditorWindow = EditorGUILayout.Toggle(showInEditorWindow);
+        showInEditorWindow = EditorGUILayout.Toggle(showInEditorWindow, "Show in scene view");
         EditorGUILayout.Space();
-
-        if(showInEditorWindow && sceneWindowScope == null)
-        {
-            sceneWindowScope = new GameObject
-            {
-                name = "AAD_scope"
-                //hideFlags = HideFlags.HideAndDontSave
-            };
-            sceneViz = sceneWindowScope.AddComponent<AlignAndDistributeVisualizer>();
-        }
-        else if (!showInEditorWindow && sceneWindowScope != null)
-        {
-            DestroyImmediate(sceneWindowScope);
-            sceneWindowScope = null;
-            sceneViz = null;
-        }
 
         EditorGUILayout.LabelField("Align", EditorStyles.boldLabel);
 
@@ -281,7 +286,7 @@ public class AlignAndDistributeWindow : EditorWindow
                 if (Mathf.Abs(TotalMargin[i]) < Mathf.Epsilon)
                 {
                     //Bail, the delta between min and max on axis is too small
-                    Debug.Assert((TotalMargin[i] > Mathf.Epsilon), "Align & Distribute: The distance along the specified direction is too small.");
+                    Debug.Assert((TotalMargin[i] < Mathf.Epsilon), "Align & Distribute: The distance along the specified direction is too small.");
                     return;
                 }
             }
