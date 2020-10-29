@@ -60,18 +60,56 @@ public class AlignAndDistributeWindow : EditorWindow
     [SerializeField]
     private bool useCustomDistributeDirection = false;
 
+    [SerializeField]
+    private bool showInEditorWindow = true;
+
+    [SerializeField]
+    private GameObject sceneWindowScope = null;
+
+    [SerializeField]
+    private AlignAndDistributeVisualizer sceneViz = null;
+
+    private readonly float sectionSpace = 24.0f;
+
     [MenuItem("Mixed Reality Toolkit/Utilities/Align and Distribute")]
     public static void ShowWindow()
     {
         GetWindow<AlignAndDistributeWindow>(false, "Aign and Distribute", true);
     }
 
+    private void OnDisable()
+    {
+        if(sceneWindowScope != null)
+        {
+            DestroyImmediate(sceneWindowScope);
+            sceneWindowScope = null;
+        }
+    }
+
     private void OnGUI()
     {
         EditorGUI.BeginChangeCheck();
 
-        EditorGUILayout.LabelField("Align", EditorStyles.boldLabel);
+        showInEditorWindow = EditorGUILayout.Toggle(showInEditorWindow);
         EditorGUILayout.Space();
+
+        if(showInEditorWindow && sceneWindowScope == null)
+        {
+            sceneWindowScope = new GameObject
+            {
+                name = "AAD_scope"
+                //hideFlags = HideFlags.HideAndDontSave
+            };
+            sceneViz = sceneWindowScope.AddComponent<AlignAndDistributeVisualizer>();
+        }
+        else if (!showInEditorWindow && sceneWindowScope != null)
+        {
+            DestroyImmediate(sceneWindowScope);
+            sceneWindowScope = null;
+            sceneViz = null;
+        }
+
+        EditorGUILayout.LabelField("Align", EditorStyles.boldLabel);
 
         alignSettings.CalculationMethod = (ConfigurationSettings.CalculationMethodType)EditorGUILayout.EnumPopup("Calculation method: ", alignSettings.CalculationMethod);
         EditorGUILayout.Space();
@@ -128,12 +166,10 @@ public class AlignAndDistributeWindow : EditorWindow
             }
 
             EditorGUILayout.EndHorizontal();
-            EditorGUILayout.Space();
+            EditorGUILayout.Space(sectionSpace);
         }
 
         EditorGUILayout.LabelField("Distribute", EditorStyles.boldLabel);
-        EditorGUILayout.Space();
-
         distributeSettings.CalculationMethod = (ConfigurationSettings.CalculationMethodType)EditorGUILayout.EnumPopup("Calculation method: ", distributeSettings.CalculationMethod);
         EditorGUILayout.Space();
 
@@ -175,10 +211,9 @@ public class AlignAndDistributeWindow : EditorWindow
                 }
             }
         }
-        EditorGUILayout.Space();
+        EditorGUILayout.Space(sectionSpace);
 
         EditorGUILayout.LabelField("Increment", EditorStyles.boldLabel);
-        EditorGUILayout.Space();
 
         incrementSettings.MovementAmount = EditorGUILayout.Vector3Field("Increment Amount", incrementSettings.MovementAmount);
         EditorGUILayout.Space();
@@ -192,8 +227,13 @@ public class AlignAndDistributeWindow : EditorWindow
         }
     }
 
+    private void DisplayAlign(GameObject[] gameObjects, ConfigurationSettings settings)
+    {
+        if (gameObjects.Length <= 0) { return; }
+        
+    }
 
-private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settings)
+    private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
 
@@ -237,7 +277,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
         for (int i = 0; i < 3; i++)
         {
             if (VectAbs(settings.Direction)[i] != 0.0f)
-            {                
+            {
                 if (Mathf.Abs(TotalMargin[i]) < Mathf.Epsilon)
                 {
                     //Bail, the delta between min and max on axis is too small
@@ -265,7 +305,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
 
             //use AABB if Collider or Renderer
             Bounds bounds = GenerateBoundsFromPoints(sortedGameObjects[i], settings.CalculationMethod);
-           
+
             if (bounds.size != Vector3.zero)
             {
                 //get the offset from the origin and AABB
@@ -290,7 +330,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
 
     private static void SetPosition(Transform transform, bool useWorldSpace, Vector3 newValue)
     {
-        if(useWorldSpace)
+        if (useWorldSpace)
         {
             transform.position = newValue;
         }
@@ -352,7 +392,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
             foreach (GameObject gameObj in gameObjects)
             {
                 Bounds bounds = GenerateBoundsFromPoints(gameObj, calculationMethod);
-                
+
                 DrawBox(bounds, Color.yellow, 5f);
 
                 if (bounds.size == Vector3.zero)
@@ -368,7 +408,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
                     min = max = bounds.center;
                     initialPositionValid = true;
                 }
-                 
+
                 for (int i = 0; i < 3; i++)
                 {
                     //find the min-most or max-most value
@@ -410,7 +450,7 @@ private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settin
 
     void DrawBox(Bounds bounds, Color color, float duration)
     {
-        
+
         Vector3 v3Center = bounds.center;
         Vector3 v3Extents = bounds.extents;
 
