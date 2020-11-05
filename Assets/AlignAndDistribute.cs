@@ -90,21 +90,38 @@ public class AlignAndDistributeWindow : EditorWindow
         SceneView.duringSceneGui -= this.SceneView_duringSceneGui;
     }
 
-    private void OnSelectionChange()
+    private void OnInspectorUpdate()
     {
+        if(Selection.gameObjects.Length <= 0) { return; }
         alignMinMax = FindAndMinMax(Selection.gameObjects, alignSettings.CalculationMethod);
         distributeMinMax = FindAndMinMax(Selection.gameObjects, distributeSettings.CalculationMethod);
     }
-
+ 
     private void SceneView_duringSceneGui(SceneView obj)
     {
-        DrawAlignButton();
+        if (Selection.gameObjects.Length <= 1) { return; }
+
+
+        Bounds selectionB = GenerateBoundsFromPoints(Selection.gameObjects, ConfigurationSettings.CalculationMethodType.Collider);
+
+        DrawAlignButton("+X", Vector3.right, selectionB.center + Vector3.right * selectionB.extents.x);
+        DrawAlignButton("-X", Vector3.left, selectionB.center - Vector3.right * selectionB.extents.x);
+
+        DrawAlignButton("+Y", Vector3.up, selectionB.center + Vector3.up * selectionB.extents.y);
+        DrawAlignButton("-Y", Vector3.down, selectionB.center - Vector3.up * selectionB.extents.y);
+
+        DrawAlignButton("+Z", Vector3.forward, selectionB.center + Vector3.forward * selectionB.extents.z);
+        DrawAlignButton("-Z", Vector3.back, selectionB.center - Vector3.forward * selectionB.extents.z);
     }
 
-    private void DrawAlignButton()
+    private void DrawAlignButton(string label, Vector3 direction, Vector3 position)
     {
-        Handles.Label(Vector3.zero, "+Z");
-        Handles.Button(Vector3.zero, Quaternion.identity, HandleUtility.GetHandleSize(Vector3.zero), HandleUtility.GetHandleSize(Vector3.zero), Handles.RectangleHandleCap);
+        Handles.Label(position, "Align " + label);
+        if(Handles.Button(position, Quaternion.LookRotation(direction, Vector3.up), HandleUtility.GetHandleSize(Vector3.zero), HandleUtility.GetHandleSize(Vector3.zero), Handles.RectangleHandleCap))
+        {
+            alignSettings.Direction = direction;
+            AlignObjects(Selection.gameObjects, alignSettings);
+        }
     }
 
     private void OnGUI()
@@ -252,8 +269,13 @@ public class AlignAndDistributeWindow : EditorWindow
         foreach (var gameObj in gameObjects)
         {
             //use AABB if Collider or Renderer
-            Bounds bounds = GenerateBoundsFromPoints(gameObj, settings.CalculationMethod);
+            Bounds bounds = new Bounds();
             Vector3 additionalOffset = Vector3.zero;
+
+            if (settings.CalculationMethod != ConfigurationSettings.CalculationMethodType.Origin)
+            {
+            bounds = GenerateBoundsFromPoints(gameObj, settings.CalculationMethod);
+            }
 
             if (bounds.size != Vector3.zero)
             {
@@ -358,10 +380,66 @@ public class AlignAndDistributeWindow : EditorWindow
         {
             BoundsExtensions.GetRenderBoundsPoints(gameObj, boundsPoints, 0);
         }
-        else
+        
+        if (boundsPoints.Count <= 0)
         {
-            //bail - wrong type
-            return bounds;
+            boundsPoints.Add(gameObj.transform.position);
+        }
+
+        bounds.center = boundsPoints[0];
+        foreach (Vector3 point in boundsPoints)
+        {
+            bounds.Encapsulate(point);
+        }
+
+        return bounds;
+    }
+
+    private Bounds GenerateBoundsFromPoints(GameObject[] gameObjs, ConfigurationSettings.CalculationMethodType calculationMethod)
+    {
+        Bounds bounds = new Bounds();
+        List<Vector3> boundsPoints = new List<Vector3>();
+
+        foreach (GameObject gameObj in gameObjs)
+        {
+            List<Vector3> objPoints = new List<Vector3>();
+
+            if (calculationMethod == ConfigurationSettings.CalculationMethodType.Collider)
+            {
+                BoundsExtensions.GetColliderBoundsPoints(gameObj, objPoints, 0);
+            }
+            else if (calculationMethod == ConfigurationSettings.CalculationMethodType.Renderer)
+            {
+                BoundsExtensions.GetRenderBoundsPoints(gameObj, objPoints, 0);
+            }
+
+            if(objPoints.Count <= 0)
+            {
+                boundsPoints.Add(gameObj.transform.position);
+            }
+            boundsPoints.AddRange(objPoints);
+        }
+
+        bounds.center = boundsPoints[0];
+        foreach (Vector3 point in boundsPoints)
+        {
+            bounds.Encapsulate(point);
+        }
+
+        return bounds;
+    }
+
+
+    private Bounds GenerateBoundsFromPositions(GameObject[] gameObjects)
+    {
+        Bounds bounds = new Bounds();
+        List<Vector3> boundsPoints = new List<Vector3>();
+
+        if (gameObjects.Length <= 1) { return bounds; }
+
+        foreach (GameObject gameObject in gameObjects)
+        {
+            boundsPoints.Add(gameObject.transform.position);
         }
 
         bounds.center = boundsPoints[0];
@@ -378,6 +456,12 @@ public class AlignAndDistributeWindow : EditorWindow
         //Grab all the min max values per axis.
         Tuple<Vector3, Vector3> MinMax = FindAndMinMax(gameObjects, calculationMethod);
 
+        //Check the direction - it will determine min or max
+        return (Vector3.Dot(direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
+    }
+
+    private Vector3 ActiveMinMaxValue(Tuple<Vector3, Vector3> MinMax, Vector3 direction)
+    {
         //Check the direction - it will determine min or max
         return (Vector3.Dot(direction, Vector3.one) > 0) ? MinMax.Item2 : MinMax.Item1;
     }
