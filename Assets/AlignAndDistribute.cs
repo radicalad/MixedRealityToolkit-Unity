@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Animations;
 
 public class AlignAndDistributeWindow : EditorWindow
 {
@@ -56,13 +55,10 @@ public class AlignAndDistributeWindow : EditorWindow
     private ConfigurationSettings incrementSettings = new ConfigurationSettings();
 
     [SerializeField]
-    private bool useCustomAlignDirection = false;
+    private bool showAlignInScene = true;
 
     [SerializeField]
-    private bool useCustomDistributeDirection = false;
-
-    [SerializeField]
-    private bool showInEditorWindow = true;
+    private bool showDistributeInScene = true;
 
     [SerializeField]
     Tuple<Vector3, Vector3> alignMinMax = new Tuple<Vector3, Vector3>(Vector3.zero, Vector3.zero);
@@ -90,34 +86,113 @@ public class AlignAndDistributeWindow : EditorWindow
         SceneView.duringSceneGui -= this.SceneView_duringSceneGui;
     }
 
-    private void OnInspectorUpdate()
-    {
-        if(Selection.gameObjects.Length <= 0) { return; }
-        alignMinMax = FindAndMinMax(Selection.gameObjects, alignSettings.CalculationMethod);
-        distributeMinMax = FindAndMinMax(Selection.gameObjects, distributeSettings.CalculationMethod);
-    }
- 
+    private void OnInspectorUpdate() { }
+
     private void SceneView_duringSceneGui(SceneView obj)
     {
         if (Selection.gameObjects.Length <= 1) { return; }
 
+        alignMinMax = FindAndMinMax(Selection.gameObjects, alignSettings.CalculationMethod);
+        distributeMinMax = FindAndMinMax(Selection.gameObjects, distributeSettings.CalculationMethod);
 
-        Bounds selectionB = GenerateBoundsFromPoints(Selection.gameObjects, ConfigurationSettings.CalculationMethodType.Collider);
+        Bounds selection = GenerateBoundsFromPoints(Selection.gameObjects, ConfigurationSettings.CalculationMethodType.Collider);
 
-        DrawAlignButton("+X", Vector3.right, selectionB.center + Vector3.right * selectionB.extents.x);
-        DrawAlignButton("-X", Vector3.left, selectionB.center - Vector3.right * selectionB.extents.x);
+        if (showAlignInScene)
+        {
+            DrawAlignmentGizmos(selection);
+        }
 
-        DrawAlignButton("+Y", Vector3.up, selectionB.center + Vector3.up * selectionB.extents.y);
-        DrawAlignButton("-Y", Vector3.down, selectionB.center - Vector3.up * selectionB.extents.y);
+        if (!showDistributeInScene || Selection.gameObjects.Length <= 2) { return; }
+        DrawDistributeGizmos(selection, .5f);
+    }
 
-        DrawAlignButton("+Z", Vector3.forward, selectionB.center + Vector3.forward * selectionB.extents.z);
-        DrawAlignButton("-Z", Vector3.back, selectionB.center - Vector3.forward * selectionB.extents.z);
+    private void DrawAlignmentGizmos(Bounds selectionB)
+    {
+        if (Mathf.Abs(alignMinMax.Item1.x - alignMinMax.Item2.x) > Mathf.Epsilon)
+        {
+            DrawAlignButton("+X", Vector3.right, selectionB.center + Vector3.right * selectionB.extents.x);
+            DrawAlignButton("-X", Vector3.left, selectionB.center - Vector3.right * selectionB.extents.x);
+        }
+
+        if (Mathf.Abs(alignMinMax.Item1.y - alignMinMax.Item2.y) > Mathf.Epsilon)
+        {
+            DrawAlignButton("+Y", Vector3.up, selectionB.center + Vector3.up * selectionB.extents.y);
+            DrawAlignButton("-Y", Vector3.down, selectionB.center - Vector3.up * selectionB.extents.y);
+        }
+
+        if (Mathf.Abs(alignMinMax.Item1.z - alignMinMax.Item2.z) > Mathf.Epsilon)
+        {
+            DrawAlignButton("+Z", Vector3.forward, selectionB.center + Vector3.forward * selectionB.extents.z);
+            DrawAlignButton("-Z", Vector3.back, selectionB.center - Vector3.forward * selectionB.extents.z);
+        }
+    }
+
+    private void DrawDistributeGizmos(Bounds selectionB, float additionalOffset)
+    {
+        if (Mathf.Abs(alignMinMax.Item1.x - alignMinMax.Item2.x) > Mathf.Epsilon)
+        {
+            // display this on the Y axis
+            var centerPoint = selectionB.center + Vector3.up * (selectionB.extents.y + additionalOffset);
+            var maxEnd = centerPoint + Vector3.right * selectionB.extents.x;
+            var minEnd = centerPoint - Vector3.right * selectionB.extents.x;
+
+            DrawDistributeButton("X", Vector3.right, Vector3.up, centerPoint);
+
+            Handles.DrawLine(centerPoint + new Vector3(0.25f, 0f, 0f), maxEnd);
+            Handles.DrawLine(centerPoint - new Vector3(0.25f, 0f, 0f), minEnd);
+            Handles.DrawLine(maxEnd, maxEnd - new Vector3(0f, 0.25f, 0f));
+            Handles.DrawLine(minEnd, minEnd - new Vector3(0f, 0.25f, 0f));
+        }
+
+        if (Mathf.Abs(alignMinMax.Item1.y - alignMinMax.Item2.y) > Mathf.Epsilon)
+        {
+            // display this on the X axis
+
+            var centerPoint = selectionB.center + Vector3.right * (selectionB.extents.x + additionalOffset);
+            var maxEnd = centerPoint + Vector3.up * selectionB.extents.y;
+            var minEnd = centerPoint - Vector3.up * selectionB.extents.y;
+
+            DrawDistributeButton("Y", Vector3.up, Vector3.right, centerPoint);
+
+            Handles.DrawLine(centerPoint + new Vector3(0f, 0.25f, 0f), maxEnd);
+            Handles.DrawLine(centerPoint - new Vector3(0f, 0.25f, 0f), minEnd);
+            Handles.DrawLine(maxEnd, maxEnd - new Vector3(0.25f, 0f, 0f));
+            Handles.DrawLine(minEnd, minEnd - new Vector3(0.25f, 0f, 0f));
+        }
+
+        if (Mathf.Abs(alignMinMax.Item1.z - alignMinMax.Item2.z) > Mathf.Epsilon)
+        {
+            // display this on the Z axis
+            var centerPoint = selectionB.center - Vector3.up * (selectionB.extents.z + additionalOffset);
+            var maxEnd = centerPoint + Vector3.forward * selectionB.extents.z;
+            var minEnd = centerPoint - Vector3.forward * selectionB.extents.z;
+
+            DrawDistributeButton("Z", Vector3.forward, Vector3.up, centerPoint);
+            Handles.DrawLine(centerPoint + new Vector3(0f, 0f, 0.25f), maxEnd);
+            Handles.DrawLine(centerPoint - new Vector3(0f, 0f, 0.25f), minEnd);
+            Handles.DrawLine(maxEnd, maxEnd + new Vector3(0, 0.5f, 0f));
+            Handles.DrawLine(minEnd, minEnd + new Vector3(0, 0.5f, 0f));
+
+        }
+
+
+    }
+
+    private void DrawDistributeButton(string label, Vector3 distributeDir, Vector3 visualizeDirection, Vector3 position)//, Vector3 min, Vector3 max)
+    {
+        Handles.Label(position, "Distribute " + label);
+        if (Handles.Button(position, Quaternion.LookRotation(Vector3.Cross(distributeDir, visualizeDirection), Vector3.up), HandleUtility.GetHandleSize(position) * .15f, HandleUtility.GetHandleSize(position) * .15f, Handles.CircleHandleCap))
+        {
+            distributeSettings.Direction = distributeDir;
+            DistributeObjects(Selection.gameObjects, distributeSettings);
+        }
     }
 
     private void DrawAlignButton(string label, Vector3 direction, Vector3 position)
     {
-        Handles.Label(position, "Align " + label);
-        if(Handles.Button(position, Quaternion.LookRotation(direction, Vector3.up), HandleUtility.GetHandleSize(Vector3.zero), HandleUtility.GetHandleSize(Vector3.zero), Handles.RectangleHandleCap))
+        Handles.Label(position, label);
+
+        if (Handles.Button(position, Quaternion.LookRotation(direction, Vector3.up), HandleUtility.GetHandleSize(position) * .25f, HandleUtility.GetHandleSize(position) * .25f, Handles.RectangleHandleCap))
         {
             alignSettings.Direction = direction;
             AlignObjects(Selection.gameObjects, alignSettings);
@@ -128,111 +203,82 @@ public class AlignAndDistributeWindow : EditorWindow
     {
         EditorGUI.BeginChangeCheck();
 
-        showInEditorWindow = EditorGUILayout.Toggle(showInEditorWindow, "Show in scene view");
         EditorGUILayout.Space();
 
         EditorGUILayout.LabelField("Align", EditorStyles.boldLabel);
+        showAlignInScene = GUILayout.Toggle(showAlignInScene, "Show in scene view");
 
         alignSettings.CalculationMethod = (ConfigurationSettings.CalculationMethodType)EditorGUILayout.EnumPopup("Calculation method: ", alignSettings.CalculationMethod);
         EditorGUILayout.Space();
 
-        useCustomAlignDirection = GUILayout.Toggle(useCustomAlignDirection, "Use Custom Direction");
-        EditorGUILayout.Space();
-
-        if (useCustomAlignDirection)
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("+X"))
         {
-            alignSettings.Direction = EditorGUILayout.Vector3Field("CustomDirection", alignSettings.Direction);
-            EditorGUILayout.Space();
-            if (GUILayout.Button("Align objects"))
-            {
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
+            alignSettings.Direction = Vector3.right;
+            AlignObjects(Selection.gameObjects, alignSettings);
         }
-        else
+
+        if (GUILayout.Button("-X"))
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("+X"))
-            {
-                alignSettings.Direction = Vector3.right;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            if (GUILayout.Button("-X"))
-            {
-                alignSettings.Direction = Vector3.left;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            if (GUILayout.Button("+Y"))
-            {
-                alignSettings.Direction = Vector3.up;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            if (GUILayout.Button("-Y"))
-            {
-                alignSettings.Direction = Vector3.down;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            if (GUILayout.Button("+Z"))
-            {
-                alignSettings.Direction = Vector3.forward;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            if (GUILayout.Button("-Z"))
-            {
-                alignSettings.Direction = Vector3.back;
-                AlignObjects(Selection.gameObjects, alignSettings);
-            }
-
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.Space(sectionSpace);
+            alignSettings.Direction = Vector3.left;
+            AlignObjects(Selection.gameObjects, alignSettings);
         }
+
+        if (GUILayout.Button("+Y"))
+        {
+            alignSettings.Direction = Vector3.up;
+            AlignObjects(Selection.gameObjects, alignSettings);
+        }
+
+        if (GUILayout.Button("-Y"))
+        {
+            alignSettings.Direction = Vector3.down;
+            AlignObjects(Selection.gameObjects, alignSettings);
+        }
+
+        if (GUILayout.Button("+Z"))
+        {
+            alignSettings.Direction = Vector3.forward;
+            AlignObjects(Selection.gameObjects, alignSettings);
+        }
+
+        if (GUILayout.Button("-Z"))
+        {
+            alignSettings.Direction = Vector3.back;
+            AlignObjects(Selection.gameObjects, alignSettings);
+        }
+
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(sectionSpace);
 
         EditorGUILayout.LabelField("Distribute", EditorStyles.boldLabel);
+
+        showDistributeInScene = GUILayout.Toggle(showDistributeInScene, "Show in scene view");
+
         distributeSettings.CalculationMethod = (ConfigurationSettings.CalculationMethodType)EditorGUILayout.EnumPopup("Calculation method: ", distributeSettings.CalculationMethod);
         EditorGUILayout.Space();
 
-        useCustomDistributeDirection = GUILayout.Toggle(useCustomDistributeDirection, "Use Custom Direction");
-        EditorGUILayout.Space();
-
-        if (useCustomDistributeDirection)
+        using (new EditorGUI.IndentLevelScope())
         {
-            using (new EditorGUI.IndentLevelScope())
+            if (GUILayout.Button("X"))
             {
-                distributeSettings.Direction = EditorGUILayout.Vector3Field("Custom Direction", distributeSettings.Direction);
-                EditorGUILayout.Space();
-                if (GUILayout.Button("Distribute objects"))
-                {
-                    DistributeObjects(Selection.gameObjects, distributeSettings);
-                }
+                distributeSettings.Direction = Vector3.right;
+                DistributeObjects(Selection.gameObjects, distributeSettings);
+            }
+
+            if (GUILayout.Button("Y"))
+            {
+                distributeSettings.Direction = Vector3.up;
+                DistributeObjects(Selection.gameObjects, distributeSettings);
+            }
+
+            if (GUILayout.Button("Z"))
+            {
+                distributeSettings.Direction = Vector3.forward;
+                DistributeObjects(Selection.gameObjects, distributeSettings);
             }
         }
-        else
-        {
-            using (new EditorGUI.IndentLevelScope())
-            {
-                if (GUILayout.Button("X"))
-                {
-                    distributeSettings.Direction = Vector3.right;
-                    DistributeObjects(Selection.gameObjects, distributeSettings);
-                }
 
-                if (GUILayout.Button("Y"))
-                {
-                    distributeSettings.Direction = Vector3.up;
-                    DistributeObjects(Selection.gameObjects, distributeSettings);
-                }
-
-                if (GUILayout.Button("Z"))
-                {
-                    distributeSettings.Direction = Vector3.forward;
-                    DistributeObjects(Selection.gameObjects, distributeSettings);
-                }
-            }
-        }
         EditorGUILayout.Space(sectionSpace);
 
         EditorGUILayout.LabelField("Increment", EditorStyles.boldLabel);
@@ -252,7 +298,7 @@ public class AlignAndDistributeWindow : EditorWindow
     private void DisplayAlign(GameObject[] gameObjects, ConfigurationSettings settings)
     {
         if (gameObjects.Length <= 0) { return; }
-        
+
     }
 
     private void AlignObjects(GameObject[] gameObjects, ConfigurationSettings settings)
@@ -274,7 +320,7 @@ public class AlignAndDistributeWindow : EditorWindow
 
             if (settings.CalculationMethod != ConfigurationSettings.CalculationMethodType.Origin)
             {
-            bounds = GenerateBoundsFromPoints(gameObj, settings.CalculationMethod);
+                bounds = GenerateBoundsFromPoints(gameObj, settings.CalculationMethod);
             }
 
             if (bounds.size != Vector3.zero)
@@ -380,7 +426,7 @@ public class AlignAndDistributeWindow : EditorWindow
         {
             BoundsExtensions.GetRenderBoundsPoints(gameObj, boundsPoints, 0);
         }
-        
+
         if (boundsPoints.Count <= 0)
         {
             boundsPoints.Add(gameObj.transform.position);
@@ -413,7 +459,7 @@ public class AlignAndDistributeWindow : EditorWindow
                 BoundsExtensions.GetRenderBoundsPoints(gameObj, objPoints, 0);
             }
 
-            if(objPoints.Count <= 0)
+            if (objPoints.Count <= 0)
             {
                 boundsPoints.Add(gameObj.transform.position);
             }
